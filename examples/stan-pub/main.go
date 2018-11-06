@@ -16,6 +16,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"sync"
@@ -25,13 +26,14 @@ import (
 )
 
 var usageStr = `
-Usage: stan-pub [options] <subject> <message>
+Usage: stan-pub [options] <subject> <message|file>
 
 Options:
 	-s, --server   <url>            NATS Streaming server URL(s)
 	-c, --cluster  <cluster name>   NATS Streaming cluster name
 	-id,--clientid <client ID>      NATS Streaming client ID
 	-a, --async                     Asynchronous publish mode
+	-f, --file                      Read message from file
 `
 
 // NOTE: Use tls scheme for TLS, e.g. stan-pub -s tls://demo.nats.io:4443 foo hello
@@ -45,6 +47,7 @@ func main() {
 	var clientID string
 	var async bool
 	var URL string
+	var file bool
 
 	flag.StringVar(&URL, "s", stan.DefaultNatsURL, "The nats server URLs (separated by comma)")
 	flag.StringVar(&URL, "server", stan.DefaultNatsURL, "The nats server URLs (separated by comma)")
@@ -54,6 +57,8 @@ func main() {
 	flag.StringVar(&clientID, "clientid", "stan-pub", "The NATS Streaming client ID to connect with")
 	flag.BoolVar(&async, "a", false, "Publish asynchronously")
 	flag.BoolVar(&async, "async", false, "Publish asynchronously")
+	flag.BoolVar(&file, "f", false, "Read message from file")
+	flag.BoolVar(&file, "file", false, "Read message from file")
 
 	log.SetFlags(0)
 	flag.Usage = usage
@@ -71,7 +76,28 @@ func main() {
 	}
 	defer sc.Close()
 
-	subj, msg := args[0], []byte(args[1])
+	subj := args[0]
+	var msg []byte
+	if file {
+		if args[1] == "-" {
+			msg, err = ioutil.ReadAll(os.Stdin)
+			if err != nil {
+				log.Fatalf("Can't read standard input: %v", err)
+			}
+		} else {
+			f, err := os.Open(args[1])
+			if err != nil {
+				log.Fatalf("Can't read file: %v", err)
+			}
+
+			msg, err = ioutil.ReadAll(f)
+			if err != nil {
+				log.Fatalf("Can't read file: %v", err)
+			}
+		}
+	} else {
+		msg = []byte(args[1])
+	}
 
 	ch := make(chan bool)
 	var glock sync.Mutex
